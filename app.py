@@ -74,6 +74,10 @@ if st.button("Analyze Resume"):
 
     st.write(result["fit_level"])
 
+    if result.get("parsed_resume") and result["parsed_resume"].get("core_skills"):
+        st.header("Resume Skills")
+        st.write(result["parsed_resume"]["core_skills"])
+
     st.header("Matched Skills")
     st.write(result["matched_skills"])
 

@@ -1,35 +1,9 @@
+import json
 import re
 from pypdf import PdfReader
 
-
-# --------------------------------------------------------
-# Skill Normalizer
-# --------------------------------------------------------
-
-SKILL_MAP = {
-    "sap gen ai": "SAP Generative AI Hub",
-    "sap generative ai": "SAP Generative AI Hub",
-    "gen ai": "Generative AI",
-    "genai": "Generative AI",
-    "btp": "SAP BTP",
-    "sap btp": "SAP BTP",
-    "cpi": "SAP Integration Suite",
-    "integration suite": "SAP Integration Suite",
-    "hana": "SAP HANA Cloud",
-    "hana cloud": "SAP HANA Cloud",
-    "ai core": "SAP AI Core",
-    "sap ai core": "SAP AI Core",
-    "joule": "SAP Joule",
-}
-
-
-def normalize_skill(skill: str) -> str:
-    skill = skill.strip().lower()
-
-    if skill in SKILL_MAP:
-        return SKILL_MAP[skill]
-
-    return skill.title()
+from prompts import SKILL_EXTRACTION_PROMPT, SKILL_MATCH_PROMPT
+from utils import llm
 
 
 # --------------------------------------------------------
@@ -89,50 +63,135 @@ KNOWN_SKILLS = [
 ]
 
 
-def extract_skills(text):
+def parse_llm_response(response):
+    content = response.content
 
+    if isinstance(content, list) and content:
+        first = content[0]
+
+        if isinstance(first, dict) and "text" in first:
+            content = first["text"]
+        else:
+            content = first
+
+    return str(content).strip()
+
+
+def extract_skills_llm(text):
+    prompt = SKILL_EXTRACTION_PROMPT.format(text=text)
+    response = llm.invoke(prompt)
+    response_text = parse_llm_response(response)
+
+    try:
+        skills = json.loads(response_text)
+    except json.JSONDecodeError:
+        return []
+
+    if not isinstance(skills, list):
+        return []
+
+    cleaned = []
+    for skill in skills:
+        if isinstance(skill, str) and skill.strip():
+            cleaned.append(skill.strip().title())
+
+    return sorted(list(set(cleaned)))
+
+
+def extract_skills_keyword(text):
     text = text.lower()
 
     skills = []
-
     for skill in KNOWN_SKILLS:
-
         if skill.lower() in text:
             skills.append(skill)
 
     return sorted(list(set(skills)))
 
 
+def extract_skills(text):
+    if not text or not text.strip():
+        return []
+
+    try:
+        llm_skills = extract_skills_llm(text)
+        if llm_skills:
+            return llm_skills
+    except Exception:
+        pass
+
+    return extract_skills_keyword(text)
+
+
 # --------------------------------------------------------
 # Match Skills
 # --------------------------------------------------------
 
+def parse_json_array(response_text):
+    text = response_text.strip()
+
+    if text.startswith("```"):
+        lines = text.splitlines()
+        if lines:
+            lines = lines[1:]
+        if lines and lines[-1].startswith("```"):
+            lines = lines[:-1]
+        text = "\n".join(lines)
+
+    return json.loads(text)
+
+
+def match_skills_llm(resume_skills, required_skills, preferred_skills=None):
+    if preferred_skills is None:
+        preferred_skills = []
+
+    prompt = SKILL_MATCH_PROMPT.format(
+        resume_skills=json.dumps(resume_skills),
+        required_skills=json.dumps(required_skills),
+        preferred_skills=json.dumps(preferred_skills),
+    )
+
+    response = llm.invoke(prompt)
+    response_text = parse_llm_response(response)
+
+    try:
+        result = parse_json_array(response_text)
+    except Exception:
+        return None
+
+    if not isinstance(result, dict):
+        return None
+
+    matched = result.get("matched_skills") or []
+    partial = result.get("partially_matched_skills") or []
+    missing = result.get("missing_skills") or []
+
+    return [matched, partial, missing]
+
+
 def match_skills(resume_skills, jd_skills):
+    try:
+        llm_result = match_skills_llm(resume_skills, jd_skills)
+        if llm_result:
+            return llm_result
+    except Exception:
+        pass
 
     matched = []
-
     missing = []
-
     partial = []
 
     resume_lower = [x.lower() for x in resume_skills]
 
     for skill in jd_skills:
-
         if skill.lower() in resume_lower:
-
             matched.append(skill)
-
         elif any(skill.lower() in r for r in resume_lower):
-
             partial.append(skill)
-
         else:
-
             missing.append(skill)
 
     return matched, partial, missing
-
 
 # --------------------------------------------------------
 # Fit Score

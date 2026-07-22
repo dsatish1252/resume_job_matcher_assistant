@@ -92,7 +92,11 @@ Preferred Skills
 
 {preferred_skills}
 
-Compare them.
+Compare the resume skills against the required and preferred skills.
+Use semantic understanding, synonyms, and role context rather than exact string matching.
+Treat skills as matched when the resume demonstrates equivalent or closely related capabilities.
+If a resume skill is related but not directly equivalent, classify it as partially matched.
+If the resume does not show the required capability, classify it as missing.
 
 Return JSON only.
 
@@ -101,6 +105,22 @@ Return JSON only.
  "partially_matched_skills":[],
  "missing_skills":[]
 }}
+"""
+
+
+SKILL_EXTRACTION_PROMPT = """
+You are an expert resume skill extraction agent.
+
+Extract all skills, technologies, tools, certifications, and qualifications mentioned in the text below.
+
+Text:
+{text}
+
+Return ONLY a JSON array of strings.
+For example:
+["Python", "Machine Learning", "SAP BTP"]
+
+Do not add any explanation, markdown, or extra text.
 """
 
 
